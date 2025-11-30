@@ -237,12 +237,12 @@ def extract_info(md_content):
     return data
 
 # chunking
-fields_main = ["title", "authors", "email", "doi", "journal", "year"]
+fields_main = ["title", "authors", "email", "doi", "journal", "year", "keywords"]
 """create chunks from paper data"""
 def create_chunks(data):
     print("creating chunks...")
     chunks = []
-    # lấy metadata
+    # get metadata
     meta = {}
     for k in fields_main:
         meta[k] = data.get(k, "")
@@ -254,18 +254,20 @@ def create_chunks(data):
         "text": meta_text,
         "metadata": {"title": meta["title"], "doi": meta["doi"], "section": "metadata"}
     })
-    # chunk 2: abstract + keywords
+    # chunk 2: abstract
     abstract = data.get("abstract", "")
-    keywords = data.get("keywords", [])
-    if isinstance(keywords, list):
-        keywords = ", ".join(keywords)
-    abs_text = f"abstract: {abstract}\nkeywords: {keywords}"
+    # keywords = data.get("keywords", [])
+    # if isinstance(keywords, list):
+    #     keywords = ", ".join(keywords)
+    # abs_text = f"abstract: {abstract}\nkeywords: {keywords}"
+    abs_text = f"abstract: {abstract}"
     chunks.append({
         "text": abs_text,
-        "metadata": {"title": meta["title"], "doi": meta["doi"], "section": "abstract+keywords"}
+        "metadata": {"title": meta["title"], "doi": meta["doi"], "section": "abstract"}
     })
     #  other sections
-    skip_keys = set(fields_main + ["abstract", "keywords"])
+    # skip_keys = set(fields_main + ["abstract", "keywords"])
+    skip_keys = set(fields_main + ["abstract"])
     for key, value in data.items():
         if key in skip_keys:
             continue
@@ -328,14 +330,26 @@ def search(query, collection_name, top_k=10):
         limit=top_k,
         with_payload=True
     )
-    # result
     output = []
+    # always retrieve chunk metadata
+    metadata_chunk = client.retrieve(
+        collection_name=collection_name,
+        ids=[0],
+        with_payload=True
+    )
+    output.append({
+        "score": 1.0,
+        "section": metadata_chunk[0].payload.get("section", ""),
+        "text": metadata_chunk[0].payload.get("text", "")
+    })
+    # results retrieved
     for hit in results:
-        output.append({
-            "score": round(hit.score, 4),
-            "section": hit.payload.get("section", ""),
-            "text": hit.payload.get("text", "")
-        })
+        if hit.id != 0:  # skip metadata chunk
+            output.append({
+                "score": round(hit.score, 4),
+                "section": hit.payload.get("section", ""),
+                "text": hit.payload.get("text", "")
+            })
     return output
 
 # generate answer
@@ -449,46 +463,46 @@ def main():
     
     eval_rag(collection_name, eval_csv="query_data.csv", output_file="eval_data.csv")
     
-    # # interactive loop
-    # print("Enter your question (type 'exit' to quit, 'reprocess' to process again)")
-    # while True:
-    #     try:
-    #         question = input("\nQuestion: ").strip()
-    #     except (EOFError, KeyboardInterrupt):
-    #         print("\nExit.")
-    #         break
-    #     if question.lower() in ["exit", "quit", "q"]:
-    #         print("Exit.")
-    #         break
-    #     if question.lower() == "reprocess":
-    #         try:
-    #             process_pdf(pdf_file, collection_name, force=True)
-    #             print("Reprocessed.")
-    #         except Exception as e:
-    #             print(f"error: {e}")
-    #         continue
-    #     if not question:
-    #         continue
-    #     try:
-    #         answer, chunks = ask(question, collection_name)
-    #         print("\n")
-    #         print("\nAnswer:")
-    #         print(answer)
-    #         print("\n")
-    #         print("\nRelated paragraphs:")
-    #         print("\n")
-    #         for i, c in enumerate(chunks, 1):
-    #             print(f"\n{i}. [{c['section']}] (score: {c['score']})")
-    #             # get preview
-    #             txt = c['text']
-    #             if len(txt) > 200:
-    #                 txt = txt[:200] + "..."
-    #             print(f"{txt}")
-    #     except Exception as e:
-    #         print(f"error: {e}")
-    # print("\n")
-    # print("\nBye!")
-    # return 0
+    # interactive loop
+    print("Enter your question (type 'exit' to quit, 'reprocess' to process again)")
+    while True:
+        try:
+            question = input("\nQuestion: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nExit.")
+            break
+        if question.lower() in ["exit", "quit", "q"]:
+            print("Exit.")
+            break
+        if question.lower() == "reprocess":
+            try:
+                process_pdf(pdf_file, collection_name, force=True)
+                print("Reprocessed.")
+            except Exception as e:
+                print(f"error: {e}")
+            continue
+        if not question:
+            continue
+        try:
+            answer, chunks = ask(question, collection_name)
+            print("\n")
+            print("\nAnswer:")
+            print(answer)
+            print("\n")
+            print("\nRelated paragraphs:")
+            print("\n")
+            for i, c in enumerate(chunks, 1):
+                print(f"\n{i}. [{c['section']}] (score: {c['score']})")
+                # get preview
+                txt = c['text']
+                if len(txt) > 200:
+                    txt = txt[:200] + "..."
+                print(f"{txt}")
+        except Exception as e:
+            print(f"error: {e}")
+    print("\n")
+    print("\nBye!")
+    return 0
 
 if __name__ == "__main__":
     exit(main())
